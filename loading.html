@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>BaiduPCS Desktop</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: linear-gradient(160deg, #0e1420 0%, #131c30 100%);
+    color: #c8d3e8; font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    user-select: none;
+  }
+  .spinner {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 3px solid rgba(90, 150, 255, .18); border-top-color: #4c8dff;
+    animation: spin 0.9s linear infinite; margin-bottom: 22px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h1 { font-size: 17px; font-weight: 500; margin: 0 0 8px; color: #e6edf9; }
+  p { font-size: 12px; margin: 0; color: #6c7a94; }
+</style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <h1>正在启动本地服务…</h1>
+  <p id="tip">BaiduPCS-Rust 后端启动中，首次运行可能需要几秒钟</p>
+  <script>
+    window.bpcs?.getInfo().then((info) => {
+      if (info && info.backendVersion) {
+        document.getElementById('tip').textContent = 'BaiduPCS-Rust ' + info.backendVersion + ' 启动中…'
+      }
+    })
+  </script>
+</body>
+</html>

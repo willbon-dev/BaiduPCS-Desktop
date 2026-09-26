@@ -1,0 +1,87 @@
+name: Auto Build
+
+# 每隔 6 小时检查上游 BaiduPCS-Rust 是否发布新版本；
+# 有新版本 → 自动下载后端 → 构建桌面壳 → 在本仓库发布 zip；
+# 也可以在 Actions 页面手动触发（可指定版本号）。
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '上游版本 tag（如 v2.2.4），留空 = 最新 release'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析上游版本并判断是否已构建过
+        id: ver
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh api repos/komorebiCarry/BaiduPCS-Rust/releases/latest --jq .tag_name)
+          fi
+          VER="${TAG#v}"
+          if gh release view "desktop-$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "desktop-$TAG 已存在，跳过"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "发现上游新版本 $TAG，开始构建"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$TAG"   >> "$GITHUB_OUTPUT"
+          echo "ver=$VER"   >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.ver.outputs.exists != 'true'
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装依赖
+        if: steps.ver.outputs.exists != 'true'
+        run: npm ci
+
+      - name: 下载上游后端 (${{ steps.ver.outputs.tag }})
+        if: steps.ver.outputs.exists != 'true'
+        run: node scripts/fetch-backend.js --tag ${{ steps.ver.outputs.tag }}
+
+      - name: 同步版本号
+        if: steps.ver.outputs.exists != 'true'
+        run: node scripts/set-version.js ${{ steps.ver.outputs.ver }}
+
+      - name: 构建 zip
+        if: steps.ver.outputs.exists != 'true'
+        run: npx electron-builder --win zip --publish never
+
+      - name: 发布 Release
+        if: steps.ver.outputs.exists != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-${{ steps.ver.outputs.tag }}
+          name: BaiduPCS Desktop ${{ steps.ver.outputs.tag }}
+          body: |
+            跟随上游 [BaiduPCS-Rust ${{ steps.ver.outputs.tag }}](https://github.com/komorebiCarry/BaiduPCS-Rust/releases/tag/${{ steps.ver.outputs.tag }}) 自动构建。
+
+            下载 zip 解压到任意目录，运行 `BaiduPCS Desktop.exe` 即可。
+            关闭窗口 = 最小化到托盘（后台继续运行）；托盘右键 → 退出 会结束后台进程。
+
+            上游更新说明见上方链接。
+          files: dist/*.zip
+          fail_on_unmatched_files: true

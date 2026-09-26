@@ -1,0 +1,8 @@
+node_modules/
+dist/
+_downloads/
+backend/*
+!backend/README.md
+smoke-*.png
+smoke-result.json
+*.log

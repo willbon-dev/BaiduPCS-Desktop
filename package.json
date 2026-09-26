@@ -1,0 +1,53 @@
+{
+  "name": "baidupcs-desktop",
+  "productName": "BaiduPCS Desktop",
+  "version": "2.2.4",
+  "private": true,
+  "description": "BaiduPCS-Rust 桌面封装：无命令行窗口、托盘常驻、关闭即后台、自动跟随上游版本构建",
+  "author": "willbon",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "fetch-backend": "node scripts/fetch-backend.js",
+    "gen-icon": "node scripts/gen-icon.js",
+    "dist": "electron-builder --win zip",
+    "smoke": "node scripts/smoke.js"
+  },
+  "devDependencies": {
+    "adm-zip": "^0.5.14",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.willbon.baidupcs.desktop",
+    "productName": "BaiduPCS Desktop",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "loading.html",
+      "error.html",
+      "assets/**/*"
+    ],
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend"
+      }
+    ],
+    "artifactName": "BaiduPCS-Desktop-${version}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    }
+  }
+}

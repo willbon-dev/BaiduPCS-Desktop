@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>BaiduPCS Desktop - 出错了</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(160deg, #0e1420 0%, #131c30 100%);
+    color: #c8d3e8; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; user-select: none;
+  }
+  .card { max-width: 560px; padding: 36px 44px; border-radius: 12px;
+    background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07); }
+  h1 { font-size: 17px; font-weight: 600; color: #ff8b7b; margin: 0 0 14px; }
+  p { font-size: 13px; line-height: 1.8; margin: 6px 0; color: #93a1ba; }
+  code { color: #7fa7e8; background: rgba(127,167,232,.1); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  button {
+    margin-top: 20px; padding: 8px 26px; font-size: 13px; cursor: pointer;
+    color: #fff; background: #3568d4; border: none; border-radius: 6px;
+    font-family: inherit;
+  }
+  button:hover { background: #4379e8; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>本地服务未就绪</h1>
+    <p id="reason">BaiduPCS-Rust 后端没有正常启动，或页面加载失败。</p>
+    <p>常见原因：</p>
+    <p>1. 默认端口 <code>18888</code> 被其他程序占用 —— 可修改程序目录下 <code>config/app.toml</code> 里的 <code>port</code> 后重试；</p>
+    <p>2. 后端启动报错退出 —— 完整输出在 <code id="logPath">wrapper.log</code>；</p>
+    <p>3. 后端程序缺失 —— 在项目目录执行 <code>npm run fetch-backend</code> 重新下载。</p>
+    <button id="retry">重试</button>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search)
+    const r = params.get('reason')
+    if (r === 'backend-exit') document.getElementById('reason').textContent = '后台进程已退出（code=' + (params.get('code') || '?') + '）。'
+    if (r === 'backend-timeout') document.getElementById('reason').textContent = '等待后台服务启动超时（90 秒）。'
+    if (r === 'load-failed') document.getElementById('reason').textContent = '页面加载失败：' + (params.get('desc') || params.get('code') || '')
+    document.getElementById('retry').addEventListener('click', () => window.bpcs.retry())
+    window.bpcs.getInfo().then((info) => {
+      if (info) {
+        document.getElementById('logPath').textContent = info.wrapperLog
+      }
+    })
+  </script>
+</body>
+</html>

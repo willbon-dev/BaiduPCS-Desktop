@@ -2,6 +2,7 @@
 
 [![Auto Build](https://github.com/willbon-dev/BaiduPCS-Desktop/actions/workflows/auto-build.yml/badge.svg)](https://github.com/willbon-dev/BaiduPCS-Desktop/actions/workflows/auto-build.yml)
 [![Release](https://img.shields.io/github/v/release/willbon-dev/BaiduPCS-Desktop?include_prereleases)](https://github.com/willbon-dev/BaiduPCS-Desktop/releases)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
 [BaiduPCS-Rust](https://github.com/komorebiCarry/BaiduPCS-Rust) 的桌面应用封装。
 
@@ -35,24 +36,43 @@ xattr -rd com.apple.quarantine "/Applications/BaiduPCS Desktop.app"
 
 ## 数据与配置
 
-采用上游的**便携式布局**，所有数据都在程序目录里（解压到哪就存哪，方便整体备份/搬迁）：
+后端以上游的**便携式布局**运行：网盘数据与配置都放在后端程序旁边，不写注册表、不散落用户目录（壳的日志除外，见下）。以 Windows 为例，解压后的完整结构：
 
 ```
 解压目录/
-└── BaiduPCS-Rust-vX.Y.Z-<平台>/
-    ├── baidu-netdisk-rust(.exe)    # 后端
-    ├── frontend/                   # Web 界面
-    ├── config/app.toml             # 端口 / 下载目录 / Web 认证等
-    ├── downloads/                  # 默认下载目录
-    └── data/ logs/ wal/
+├── BaiduPCS Desktop.exe                 # 应用入口
+├── resources/
+│   ├── app.asar                         # 壳本身（Electron 代码）
+│   └── backend/
+│       ├── VERSION                      # 对应的上游版本号
+│       └── BaiduPCS-Rust-v2.2.4-windows-x86_64/    ← 后端与数据都在这里
+│           ├── baidu-netdisk-rust.exe   # 后端
+│           ├── frontend/                # Web 界面（随包附带）
+│           ├── config/app.toml          # 配置（随包附带，已按桌面场景微调，见下）
+│           └── downloads/  data/  logs/  wal/      # 运行后生成
+└── …（Electron 运行时文件：*.dll、locales/ 等）
 ```
 
-常用配置（`config/app.toml`，改完重启应用生效）：
+macOS / Linux 结构一致：数据分别在 `BaiduPCS Desktop.app/Contents/Resources/backend/` 与解压目录的 `resources/backend/` 下。
+因此**备份 / 搬迁 = 拷走整个 `resources/backend` 目录**；注意 macOS 把 app 拖入 Applications 后，数据也在 `.app` 包内部。
 
-- `server.port`：监听端口，默认 `18888`
-- `server.host`：默认 `0.0.0.0`（局域网可访问）。介意的话改成 `"127.0.0.1"`，或按上游文档开启 `web_auth`
-- `download.download_dir`：下载目录，默认程序目录下的 `downloads/`
-- `web_auth.*`：需要暴露到公网时按上游文档开启密码 / TOTP 认证
+### config/app.toml 常用项
+
+| 配置 | 默认值 | 说明 |
+|---|---|---|
+| `server.port` | `18888` | 服务监听端口，壳会自动探测并连接 |
+| `server.host` | `"0.0.0.0"` | 默认局域网可访问；介意就改成 `"127.0.0.1"`，或开启 `web_auth` |
+| `download.download_dir` | `"downloads"` | 相对后端目录；也可写绝对路径 |
+| `web_auth.enabled` / `mode` | `false` / `"none"` | 需要暴露公网时按上游文档开启密码 / TOTP |
+
+两点说明：
+
+- 构建时脚本会把 `filesystem.allowed_paths` 调整为 `[]`——上游默认指向 docker 的 `/data/uploads`，会限制桌面版的上传选择器目录；其余配置保持上游原样
+- 修改配置后需要**完全退出**（托盘右键 → 退出）再打开才生效
+
+### 升级须知
+
+后端目录名自带版本号（`BaiduPCS-Rust-vX.Y.Z-…`），**升级到新版后是一个全新空目录**：登录状态与配置不会自动迁移。升级前如需保留，把旧目录的 `config/app.toml` 和 `downloads/` 拷贝到新目录即可（新包里附带的 `config/app.toml.example` 可用来对照字段是否有变化）。
 
 壳自身的运行日志（启动后端、端口探测等）：用户数据目录下 `BaiduPCS Desktop/wrapper.log`
 （Windows 在 `%APPDATA%`，macOS 在 `~/Library/Application Support`，Linux 在 `~/.config`）。
@@ -146,4 +166,4 @@ baidupcs-desktop/
 
 - 核心能力全部来自上游 [komorebiCarry/BaiduPCS-Rust](https://github.com/komorebiCarry/BaiduPCS-Rust)，本项目只是桌面壳
 - 使用第三方百度网盘客户端存在账号风险，请自行评估
-- 仓库暂未设置开源许可证，如需复用请先联系作者
+- 本项目以 [Apache-2.0](LICENSE) 许可开源

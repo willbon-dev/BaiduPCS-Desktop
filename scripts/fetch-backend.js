@@ -57,25 +57,44 @@ async function resolveTag(tagArg) {
   throw new Error('无法获取最新版本号。请检查网络，或手动指定版本：node scripts/fetch-backend.js --tag v2.2.4')
 }
 
+// 上游不同平台的架构命名不统一（发布资产用 arm64，docker 资产用 amd64，部分文档写 aarch64），
+// 匹配与拼名时把常见等价写法都试一遍，避免上游改名导致 404
+const ARCH_ALIASES = {
+  x86_64: ['x86_64', 'amd64'],
+  aarch64: ['aarch64', 'arm64'],
+}
+const archTokens = (arch) => ARCH_ALIASES[arch] || [arch]
+
 // 优先从 release API 取真实资产（上游 zip/tar.gz 命名偶有变化），
-// API 不可用时按惯例拼出 zip 与 tar.gz 两个候选
+// API 不可用时按惯例拼出各候选 URL
 async function resolveAssetUrls(tag, os, arch) {
+  const tokens = archTokens(arch)
+  const re = new RegExp(`-${os}-(${tokens.join('|')})\\.(zip|tar\\.gz)$`, 'i')
+  let seenAssets = []
   const api = `https://api.github.com/repos/${REPO}/releases/tags/${tag}`
   for (const m of MIRRORS) {
     try {
       const res = await fetchWithTimeout(m + api, 20000)
       if (res.ok) {
         const j = await res.json()
-        const re = new RegExp(`-${os}-${arch}\\.(zip|tar\\.gz)$`, 'i')
-        const hit = (j.assets || []).find((a) => re.test(a.name))
-        if (hit) return [hit.browser_download_url]
+        seenAssets = (j.assets || []).map((a) => a.name)
+        const hit = seenAssets.find((name) => re.test(name))
+        if (hit) {
+          const asset = (j.assets || []).find((a) => a.name === hit)
+          return { urls: [asset.browser_download_url], seenAssets }
+        }
+        break // API 正常但没有匹配资产，直接走拼名（资产清单会出现在失败提示里）
       }
     } catch (e) {
       console.log(`查询资产列表失败（${m || 'GitHub 直连'}）: ${e.message}`)
     }
   }
-  const base = `https://github.com/${REPO}/releases/download/${tag}/BaiduPCS-Rust-${tag}-${os}-${arch}`
-  return [base + '.zip', base + '.tar.gz']
+  const base = `https://github.com/${REPO}/releases/download/${tag}/BaiduPCS-Rust-${tag}-${os}`
+  const urls = []
+  for (const t of tokens) {
+    urls.push(`${base}-${t}.zip`, `${base}-${t}.tar.gz`)
+  }
+  return { urls, seenAssets }
 }
 
 async function downloadTo(url, dest, ms = 600000) {
@@ -144,10 +163,15 @@ async function main() {
   await fsp.mkdir(BACKEND_DIR, { recursive: true })
   console.log(`上游版本: ${tag}  平台: ${os}-${arch}`)
 
-  const urls = await resolveAssetUrls(tag, os, arch)
-  const prefixes = process.env.GH_PROXY
-    ? [process.env.GH_PROXY.replace(/\/?$/, '/'), ...MIRRORS]
-    : MIRRORS
+  const { urls, seenAssets } = await resolveAssetUrls(tag, os, arch)
+  // GitHub Actions 上访问 GitHub 本来就快，不引入第三方镜像；本地按需走加速
+  const onCi = process.env.GITHUB_ACTIONS === 'true'
+  const prefixes = onCi
+    ? ['']
+    : process.env.GH_PROXY
+      ? [process.env.GH_PROXY.replace(/\/?$/, '/'), ...MIRRORS]
+      : MIRRORS
+  if (onCi) console.log('CI 环境：仅使用 GitHub 直连')
 
   let archive = null
   let size = 0
@@ -165,7 +189,12 @@ async function main() {
     }
     if (archive) break
   }
-  if (!archive) throw new Error('所有下载方式均失败。国内网络可设置环境变量 GH_PROXY=https://ghfast.top 后重试')
+  if (!archive) {
+    const hint = seenAssets.length
+      ? `上游 ${tag} 的实际资产：\n  ${seenAssets.join('\n  ')}`
+      : '未能读取上游资产列表（GitHub API 不可达）'
+    throw new Error(`所有下载方式均失败。\n${hint}\n国内网络可设置环境变量 GH_PROXY=https://ghfast.top 后重试`)
+  }
 
   console.log(`下载完成: ${(size / 1024 / 1024).toFixed(1)} MB，解压中…`)
   // 清理旧文件（保留 README.md），再解压新版本

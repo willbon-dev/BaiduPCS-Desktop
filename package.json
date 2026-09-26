@@ -39,15 +39,20 @@
         "to": "backend"
       }
     ],
-    "artifactName": "BaiduPCS-Desktop-${version}-${arch}.${ext}",
+    "artifactName": "BaiduPCS-Desktop-${version}-${os}-${arch}.${ext}",
     "win": {
-      "target": [
-        {
-          "target": "zip",
-          "arch": ["x64"]
-        }
-      ],
+      "target": ["zip"],
       "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": ["zip"],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": ["zip"],
+      "icon": "assets/icon.png",
+      "category": "Utility"
     }
   }
 }

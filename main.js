@@ -55,24 +55,29 @@ function log(...args) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-// 递归找 exe（zip 解压后形如 backend/BaiduPCS-Rust-vX.Y.Z-windows-x86_64/baidu-netdisk-rust.exe）
-function findBackendExe(dir = backendDir()) {
+// 递归找后端可执行文件
+// zip 解压后形如 backend/BaiduPCS-Rust-vX.Y.Z-<platform>/baidu-netdisk-rust[.exe]
+function findBackendBin(dir = backendDir()) {
   if (!fs.existsSync(dir)) return null
   for (const name of fs.readdirSync(dir)) {
     const p = path.join(dir, name)
-    const st = fs.statSync(p)
-    if (st.isFile() && name.toLowerCase().endsWith('.exe')) return p
-    if (st.isDirectory()) {
-      const r = findBackendExe(p)
+    let st
+    try { st = fs.statSync(p) } catch { continue }
+    if (st.isFile()) {
+      const n = name.toLowerCase()
+      if (process.platform === 'win32' && n.endsWith('.exe')) return p
+      if (process.platform !== 'win32' && n.startsWith('baidu-netdisk-rust')) return p
+    } else if (st.isDirectory()) {
+      const r = findBackendBin(p)
       if (r) return r
     }
   }
   return null
 }
 
-// 后端工作目录 = exe 所在目录（上游便携设计：config/frontend/downloads 都在 exe 旁）
+// 后端工作目录 = 可执行文件所在目录（上游便携设计：config/frontend/downloads 都在旁边）
 function backendCwd() {
-  const exe = findBackendExe()
+  const exe = findBackendBin()
   return exe ? path.dirname(exe) : null
 }
 
@@ -125,9 +130,9 @@ function truncateWrapperLog() {
 }
 
 function startBackend() {
-  const exe = findBackendExe()
+  const exe = findBackendBin()
   if (!exe) {
-    const err = `后端未找到：${backendDir()} 目录下没有 .exe。请先运行 npm run fetch-backend`
+    const err = `后端未找到：${backendDir()} 目录下没有可执行文件（Windows 为 .exe，macOS/Linux 为 baidu-netdisk-rust）。请先运行 npm run fetch-backend`
     log('ERROR', err)
     throw new Error(err)
   }
@@ -137,7 +142,8 @@ function startBackend() {
   log('启动后端：', exe, 'cwd=', cwd)
   const child = spawn(exe, [], {
     cwd,
-    windowsHide: true,                     // 关键：不弹黑色命令行窗口
+    windowsHide: true,                          // Windows：不弹黑色命令行窗口
+    detached: process.platform !== 'win32',     // Unix：独立进程组，便于整组结束
     stdio: ['ignore', out, out],
   })
   backend = child
@@ -167,11 +173,20 @@ function killBackend() {
   if (!child || !child.pid) return
   child.suppressExit = true // 主动结束不弹“后端已退出”提醒
   log('结束后端 pid=', child.pid)
-  try {
-    // /T 连同子进程整棵杀掉，/F 强制
-    execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {})
-  } catch { /* 忽略 */ }
-  try { child.kill() } catch { /* 忽略 */ }
+  if (process.platform === 'win32') {
+    try {
+      // /T 连同子进程整棵杀掉，/F 强制
+      execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {})
+    } catch { /* 忽略 */ }
+  } else {
+    // detached 启动时 pid 是进程组长，负值 = 结束整组
+    try { process.kill(-child.pid, 'SIGTERM') } catch { /* 忽略 */ }
+    setTimeout(() => {
+      try { process.kill(-child.pid, 'SIGKILL') } catch { /* 忽略 */ }
+      try { child.kill('SIGKILL') } catch { /* 忽略 */ }
+    }, 1500).unref()
+  }
+  try { child.kill('SIGTERM') } catch { /* 忽略 */ }
 }
 
 // ---------- 窗口 ----------

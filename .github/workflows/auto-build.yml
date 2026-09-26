@@ -1,7 +1,8 @@
 name: Auto Build
 
 # 每隔 6 小时检查上游 BaiduPCS-Rust 是否发布新版本；
-# 有新版本 → 自动下载后端 → 构建桌面壳 → 在本仓库发布 zip；
+# 有新版本 → 五个平台并行构建（Windows/Linux x64+ARM64、macOS Intel+Apple Silicon）
+# → 全部成功后在本仓库发布 Release（含各平台 zip）；
 # 也可以在 Actions 页面手动触发（可指定版本号）。
 
 on:
@@ -22,11 +23,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: windows-latest
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      ver: ${{ steps.ver.outputs.ver }}
+      exists: ${{ steps.ver.outputs.exists }}
     steps:
-      - uses: actions/checkout@v4
-
       - name: 解析上游版本并判断是否已构建过
         id: ver
         shell: bash
@@ -48,40 +51,77 @@ jobs:
           echo "tag=$TAG"   >> "$GITHUB_OUTPUT"
           echo "ver=$VER"   >> "$GITHUB_OUTPUT"
 
+  build:
+    needs: check
+    if: needs.check.outputs.exists != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: windows, arch: x86_64,  args: "--win zip --x64" }
+          - { os: ubuntu-latest,  name: linux,   arch: x86_64,  args: "--linux zip --x64" }
+          - { os: ubuntu-latest,  name: linux,   arch: aarch64, args: "--linux zip --arm64" }
+          - { os: macos-latest,   name: macos,   arch: x86_64,  args: "--mac zip --x64" }
+          - { os: macos-latest,   name: macos,   arch: aarch64, args: "--mac zip --arm64" }
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false   # macOS 无证书，跳过签名探测
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
-        if: steps.ver.outputs.exists != 'true'
         with:
           node-version: '22'
           cache: npm
 
       - name: 安装依赖
-        if: steps.ver.outputs.exists != 'true'
         run: npm ci
 
-      - name: 下载上游后端 (${{ steps.ver.outputs.tag }})
-        if: steps.ver.outputs.exists != 'true'
-        run: node scripts/fetch-backend.js --tag ${{ steps.ver.outputs.tag }}
+      - name: 下载上游后端 (${{ needs.check.outputs.tag }} / ${{ matrix.name }}-${{ matrix.arch }})
+        run: node scripts/fetch-backend.js --tag ${{ needs.check.outputs.tag }} --os ${{ matrix.name }} --arch ${{ matrix.arch }}
 
       - name: 同步版本号
-        if: steps.ver.outputs.exists != 'true'
-        run: node scripts/set-version.js ${{ steps.ver.outputs.ver }}
+        run: node scripts/set-version.js ${{ needs.check.outputs.ver }}
 
       - name: 构建 zip
-        if: steps.ver.outputs.exists != 'true'
-        run: npx electron-builder --win zip --publish never
+        run: npx electron-builder ${{ matrix.args }} --publish never
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.name }}-${{ matrix.arch }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: [check, build]
+    if: needs.check.outputs.exists != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 汇总各平台产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
 
       - name: 发布 Release
-        if: steps.ver.outputs.exists != 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: desktop-${{ steps.ver.outputs.tag }}
-          name: BaiduPCS Desktop ${{ steps.ver.outputs.tag }}
+          tag_name: desktop-${{ needs.check.outputs.tag }}
+          name: BaiduPCS Desktop ${{ needs.check.outputs.tag }}
           body: |
-            跟随上游 [BaiduPCS-Rust ${{ steps.ver.outputs.tag }}](https://github.com/komorebiCarry/BaiduPCS-Rust/releases/tag/${{ steps.ver.outputs.tag }}) 自动构建。
+            跟随上游 [BaiduPCS-Rust ${{ needs.check.outputs.tag }}](https://github.com/komorebiCarry/BaiduPCS-Rust/releases/tag/${{ needs.check.outputs.tag }}) 自动构建。
 
-            下载 zip 解压到任意目录，运行 `BaiduPCS Desktop.exe` 即可。
-            关闭窗口 = 最小化到托盘（后台继续运行）；托盘右键 → 退出 会结束后台进程。
+            | 平台 | 产物 |
+            |---|---|
+            | Windows x64 | `BaiduPCS-Desktop-*-*-win-x64.zip`（解压即用） |
+            | Linux x64 / ARM64 | `BaiduPCS-Desktop-*-*-linux-*.zip`（解压后运行 `baidupcs-desktop`） |
+            | macOS Intel / Apple Silicon | `BaiduPCS-Desktop-*-*-mac-*.zip`（解压后拖入 Applications） |
+
+            - 关闭窗口 = 最小化到托盘（后台继续运行）；托盘/菜单栏图标右键 → 退出 会结束后台进程
+            - macOS 应用未签名：首次打开若提示“已损坏”，在终端执行
+              `xattr -rd com.apple.quarantine "/Applications/BaiduPCS Desktop.app"`
 
             上游更新说明见上方链接。
-          files: dist/*.zip
+          files: artifacts/*.zip
           fail_on_unmatched_files: true

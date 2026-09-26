@@ -8,6 +8,7 @@
 - **托盘可退出**：托盘左键打开主界面，右键菜单 → 退出（同时结束后端进程树）
 - **低资源占用**：全局禁用 GPU 进程；托盘态仅剩 Electron 主进程（约 60~90MB）+ Rust 后端本身
 - **长列表自动分页**：上传/下载/转存/云下载/文件列表任务过多时（默认超 100 条），壳层自动注入分页条（100/200/500/不限 条每页），隐藏视口外条目的渲染，避免页面卡顿；上游将来若自带分页会自动让位
+- **五平台矩阵构建**：Windows x64、Linux x64/ARM64、macOS Intel/Apple Silicon，与上游发布节奏一一对应
 - **端口冲突安全**：启动时若发现 18888 已有服务（例如你手动运行的后端），直接复用不重复启动；退出也只杀自己启动的后端
 - **自动跟随上游**：GitHub Actions 每 6 小时检查上游 release，有新版本自动构建 zip 并发布到本仓库 Releases
 
@@ -78,12 +79,28 @@ npm run smoke
 
 1. 把本项目上传到你的 GitHub 仓库（`backend/` 里的二进制会被 gitignore，无需担心）
 2. 仓库 Settings → Actions 确认工作流已启用
-3. 之后每 6 小时自动检查上游 release：
-   - 上游发布新版本（如 `v2.2.5`）→ 自动下载对应 Windows 后端 → 构建出 `BaiduPCS-Desktop-2.2.5-x64.zip` → 发布到本仓库 Releases（tag 形如 `desktop-v2.2.5`）
-   - 已构建过的版本不会重复构建
-4. 想立即构建：Actions → Auto Build → Run workflow（可填指定 tag）
+3. 之后每 6 小时自动检查上游 release，有新版本时五平台并行构建：
+
+   | 平台 | 产物 |
+   |---|---|
+   | Windows x64 | `BaiduPCS-Desktop-*-*-win-x64.zip` |
+   | Linux x64 / ARM64 | `BaiduPCS-Desktop-*-*-linux-x64.zip` / `*-linux-arm64.zip` |
+   | macOS Intel / Apple Silicon | `BaiduPCS-Desktop-*-*-mac-x64.zip` / `*-mac-arm64.zip` |
+
+4. 全部平台构建成功后自动发布 Release（tag 形如 `desktop-v2.2.5`）；已构建过的版本不会重复构建
+5. 想立即构建：Actions → Auto Build → Run workflow（可填指定 tag）
 
 > 注意：定时任务只在**默认分支**上运行，保持默认分支为包含本工作流的分支即可。
+
+## 非 Windows 平台使用说明
+
+- **Linux**：解压 zip 后进入目录执行 `./baidupcs-desktop`（或对应可执行文件）
+- **macOS**：解压 zip，把 `BaiduPCS Desktop.app` 拖入 Applications。应用未签名（没有开发者证书），
+  首次打开若提示"已损坏"或"无法验证开发者"，在终端执行：
+  ```bash
+  xattr -rd com.apple.quarantine "/Applications/BaiduPCS Desktop.app"
+  ```
+- 托盘图标在 macOS 上位于顶部菜单栏，右键（或 Ctrl+点击）可退出
 
 ## 免责声明
 

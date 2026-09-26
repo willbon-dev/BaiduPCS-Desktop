@@ -158,9 +158,11 @@ function encodeICO(entries) {
 const assets = path.join(__dirname, '..', 'assets')
 fs.mkdirSync(assets, { recursive: true })
 fs.writeFileSync(path.join(assets, 'icon.png'), encodePNG(256, 256, render(256, true)))
-fs.writeFileSync(path.join(assets, 'tray.png'), encodePNG(32, 32, render(32, true)))
+// 托盘：16px 本体 + 32px @2x（macOS 菜单栏按 tray.png / tray@2x.png 约定自动选择）
+fs.writeFileSync(path.join(assets, 'tray.png'), encodePNG(16, 16, render(16, true)))
+fs.writeFileSync(path.join(assets, 'tray@2x.png'), encodePNG(32, 32, render(32, true)))
 fs.writeFileSync(path.join(assets, 'icon.ico'), encodeICO([
   ...[16, 24, 32, 48].map((s) => ({ size: s, data: icoEntryBMP(s, render(s, s >= 32)) })),
   { size: 256, data: encodePNG(256, 256, render(256, true)) },
 ]))
-console.log('图标已生成: assets/icon.ico, assets/icon.png, assets/tray.png')
+console.log('图标已生成: assets/icon.ico, assets/icon.png, assets/tray.png, assets/tray@2x.png')

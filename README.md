@@ -1,107 +1,149 @@
 # BaiduPCS Desktop
 
-[BaiduPCS-Rust](https://github.com/komorebiCarry/BaiduPCS-Rust) 的 Windows 桌面壳（Electron）：
+[![Auto Build](https://github.com/willbon-dev/BaiduPCS-Desktop/actions/workflows/auto-build.yml/badge.svg)](https://github.com/willbon-dev/BaiduPCS-Desktop/actions/workflows/auto-build.yml)
+[![Release](https://img.shields.io/github/v/release/willbon-dev/BaiduPCS-Desktop?include_prereleases)](https://github.com/willbon-dev/BaiduPCS-Desktop/releases)
 
-- **无命令行窗口**：Rust 后端以隐藏方式启动，桌面上只有一个正常的应用窗口
-- **点开即页面**：启动后自动等待本地服务就绪并加载 Web 界面（默认 `127.0.0.1:18888`）
-- **关闭 = 退到托盘**：点关闭按钮直接**销毁**窗口（渲染进程退出，内存归还系统），程序驻留托盘
-- **托盘可退出**：托盘左键打开主界面，右键菜单 → 退出（同时结束后端进程树）
-- **低资源占用**：全局禁用 GPU 进程；托盘态仅剩 Electron 主进程（约 60~90MB）+ Rust 后端本身
-- **长列表自动分页**：上传/下载/转存/云下载/文件列表任务过多时（默认超 100 条），壳层自动注入分页条（100/200/500/不限 条每页），隐藏视口外条目的渲染，避免页面卡顿；上游将来若自带分页会自动让位
-- **五平台矩阵构建**：Windows x64、Linux x64/ARM64、macOS Intel/Apple Silicon，与上游发布节奏一一对应
-- **端口冲突安全**：启动时若发现 18888 已有服务（例如你手动运行的后端），直接复用不重复启动；退出也只杀自己启动的后端
-- **自动跟随上游**：GitHub Actions 每 6 小时检查上游 release，有新版本自动构建 zip 并发布到本仓库 Releases
+[BaiduPCS-Rust](https://github.com/komorebiCarry/BaiduPCS-Rust) 的桌面应用封装。
 
-## 目录结构
+上游是一个"Rust 后端 + 内置 Web 界面"的单文件网盘客户端，功能很全（文件管理、多线程下载、上传、转存、自动备份等），但官方形态需要自己开终端、记端口、开浏览器。本项目把它包成一个普通桌面应用：
+
+- **双击即用**：启动后自动拉起后端、等待服务就绪、加载 Web 界面，全程无命令行黑窗口
+- **关闭 = 退到托盘**：点关闭按钮直接销毁窗口（渲染进程退出、内存归还），托盘/菜单栏右键可完全退出
+- **低资源占用**：全局禁用 GPU 进程；托盘态只剩 Electron 主进程（约 60~90MB）+ 后端本身
+- **长列表分页**：上传/下载/转存/云下载/文件列表任务过多时自动分页，避免页面卡顿（壳层注入实现，不改上游任何代码）
+- **跟随上游发版**：GitHub Actions 每 6 小时检查上游 release，有新版本自动五平台构建并发布
+
+## 下载
+
+到 [Releases](https://github.com/willbon-dev/BaiduPCS-Desktop/releases) 按平台下载：
+
+| 平台 | 文件 | 使用方式 |
+|---|---|---|
+| Windows x64 | `BaiduPCS-Desktop-*-win-x64.zip` | 解压到任意目录，运行 `BaiduPCS Desktop.exe` |
+| Linux x64 / ARM64 | `BaiduPCS-Desktop-*-linux-x64.zip` / `-arm64.zip` | 解压后运行 `./baidupcs-desktop` |
+| macOS Intel / Apple Silicon | `BaiduPCS-Desktop-*-mac-x64.zip` / `-mac-arm64.zip` | 解压后把 `BaiduPCS Desktop.app` 拖入 Applications |
+
+首次启动会在界面内扫码登录百度账号（登录逻辑属于上游，与本壳无关）。
+
+> Windows 未做代码签名，SmartScreen 可能提示"已保护你的电脑"，点"更多信息 → 仍要运行"即可。
+
+**macOS 提示"已损坏"或"无法验证开发者"**：应用未签名，去掉隔离标记后即可打开：
+
+```bash
+xattr -rd com.apple.quarantine "/Applications/BaiduPCS Desktop.app"
+```
+
+## 数据与配置
+
+采用上游的**便携式布局**，所有数据都在程序目录里（解压到哪就存哪，方便整体备份/搬迁）：
+
+```
+解压目录/
+└── BaiduPCS-Rust-vX.Y.Z-<平台>/
+    ├── baidu-netdisk-rust(.exe)    # 后端
+    ├── frontend/                   # Web 界面
+    ├── config/app.toml             # 端口 / 下载目录 / Web 认证等
+    ├── downloads/                  # 默认下载目录
+    └── data/ logs/ wal/
+```
+
+常用配置（`config/app.toml`，改完重启应用生效）：
+
+- `server.port`：监听端口，默认 `18888`
+- `server.host`：默认 `0.0.0.0`（局域网可访问）。介意的话改成 `"127.0.0.1"`，或按上游文档开启 `web_auth`
+- `download.download_dir`：下载目录，默认程序目录下的 `downloads/`
+- `web_auth.*`：需要暴露到公网时按上游文档开启密码 / TOTP 认证
+
+壳自身的运行日志（启动后端、端口探测等）：用户数据目录下 `BaiduPCS Desktop/wrapper.log`
+（Windows 在 `%APPDATA%`，macOS 在 `~/Library/Application Support`，Linux 在 `~/.config`）。
+
+## 工作原理
+
+```
+启动 → 探测端口（app.toml 里的 port，依次尝试 18888 / 8080）
+     ├─ 端口已有服务（比如你自己手动跑的后端）→ 直接复用，不重复启动，退出时也不会动它
+     └─ 端口空闲 → 隐藏启动 backend/ 里的上游可执行文件（工作目录 = 程序目录）
+        → 最多等 90 秒 → 加载 http://127.0.0.1:<port>/
+```
+
+- 单实例锁：重复双击只会唤起已有窗口
+- 关闭窗口 = `destroy()` 而非隐藏，渲染进程即刻退出；托盘左键重开（页面状态在后端，重开无损失，登录态存在本地分区里不丢）
+- 托盘右键菜单：打开主界面 / 退出（结束后端进程树：Windows `taskkill /T /F`，Unix 结束进程组）
+- 后端意外退出会弹系统通知，重开窗口可自动重启
+
+### 长列表分页是怎么做的
+
+上游前端是一次性渲染全部任务的，任务多时布局/绘制开销会造成明显卡顿。本壳在页面里注入了一个 DOM 级分页器：
+
+- 列表超过阈值（默认 100 条）时出现底部悬浮分页条，每页 100/200/500/不限 可选（记忆在 localStorage）
+- 非当前页的行以 CSS 类隐藏，新插入的行默认隐藏，实时刷新进度不会闪屏
+- 视口外的卡片附加 `content-visibility: auto`，即使不分页也跳过布局与绘制
+- 覆盖：下载、上传、转存、云下载任务卡、网盘文件表格、云下载明细
+- 它只操作 DOM、不碰上游代码，上游更新不受影响；将来上游若自带分页（列表变短），分页器会自动失效让位
+
+## 从源码构建
+
+环境：Node.js ≥ 22。国内镜像已内置（`.npmrc` 指向 npmmirror，Electron / electron-builder 二进制同步走镜像）。
+
+```bash
+git clone git@github.com:willbon-dev/BaiduPCS-Desktop.git
+cd BaiduPCS-Desktop
+npm install              # 安装依赖
+npm run fetch-backend    # 下载上游后端到 backend/（直连失败自动切换加速代理）
+npm start                # 本地运行
+npm run dist             # 打包当前平台 zip 到 dist/
+```
+
+下载上游后端可指定版本与平台（CI 矩阵即通过这两个参数构建五平台）：
+
+```bash
+node scripts/fetch-backend.js --tag v2.2.4 --os linux --arch aarch64
+# 国内网络仍慢时：GH_PROXY=https://ghfast.top node scripts/fetch-backend.js
+```
+
+其他脚本：
+
+- `npm run gen-icon`：纯 Node 重新生成 `assets/` 下的图标（零依赖、不联网）
+- `npm run smoke`：冒烟测试——真实启动应用并自动验证「页面加载 / 关闭到托盘 / 后端存活 / 退出清理」，
+  输出 `smoke-window.png` 截图与 `smoke-result.json`。**会占用 18888 端口，请先关闭正在运行的实例**
+
+## 自动构建
+
+`.github/workflows/auto-build.yml`，三个阶段：
+
+1. **check**：读取上游最新 release，若本仓库已存在对应 `desktop-<tag>` 则直接跳过
+2. **build**：五平台矩阵并行（Windows / Ubuntu ×2 / macOS ×2；Linux ARM64 与 macOS Intel 为交叉打包，
+   Electron 纯打包无原生编译，不需要对应架构真机），每平台下载对应架构的上游后端后打出 zip
+3. **release**：五份产物全部成功后，汇总发布一个 Release（tag 形如 `desktop-v2.2.5`）
+
+触发方式：定时（`17 */6 * * *`，即北京时间 08:17 / 14:17 / 20:17 / 02:17）或 Actions 页面手动 Run workflow（可填指定 tag 补旧版本）。
+
+注意事项：
+
+- 定时任务只在默认分支上生效
+- 仓库 60 天无提交后 GitHub 会暂停定时工作流（会发邮件提醒），任意提交即可恢复
+- 若发布阶段报 403：Settings → Actions → General → Workflow permissions 改为 Read and write permissions
+  （工作流内已显式声明 `contents: write`，一般无需改动）
+
+## 项目结构
 
 ```
 baidupcs-desktop/
-├── main.js                  # Electron 主进程（后端管理/托盘/窗口/冒烟）
-├── preload.js               # 渲染层桥（错误页重试、诊断信息）
+├── main.js                  # Electron 主进程：后端生命周期 / 托盘 / 窗口 / 端口探测 / 冒烟钩子
+├── preload.js               # 壳层注入：诊断信息桥 + 长列表分页器
 ├── loading.html / error.html
-├── assets/                  # 图标（由 scripts/gen-icon.js 纯代码生成）
-├── backend/                 # 构建时放入上游 exe（不提交二进制）
+├── assets/                  # 图标（scripts/gen-icon.js 纯代码生成，含 Windows ICO 与 macOS 托盘 @2x）
+├── backend/                 # 构建时由 fetch-backend 填充上游可执行文件（不入库）
 ├── scripts/
-│   ├── fetch-backend.js     # 下载上游 Windows 版（自动尝试国内加速代理）
-│   ├── gen-icon.js          # 纯 Node 生成 PNG/ICO 图标（零依赖）
-│   ├── set-version.js       # CI 同步版本号
-│   └── smoke.js             # 冒烟测试（会真实启动，注意端口）
-└── .github/workflows/auto-build.yml   # 自动构建工作流
+│   ├── fetch-backend.js     # 按平台下载上游发布包（release API 匹配资产 + 国内加速代理回退）
+│   ├── gen-icon.js          # 纯 Node 生成 PNG/ICO 图标
+│   ├── set-version.js       # CI 同步上游版本号
+│   └── smoke.js             # 冒烟测试入口
+└── .github/workflows/auto-build.yml
 ```
 
-## 本地开发
+## 致谢与声明
 
-环境：Node.js 22（本机已安装于 `C:\Users\willbon\AppData\Local\Programs\nodejs`，已加入用户 PATH）。
-npm 与 Electron 二进制均走 npmmirror 国内镜像（见 `.npmrc`）。
-
-```bash
-npm install                 # 安装 Electron 等（走国内镜像）
-npm run fetch-backend       # 下载上游后端 exe 到 backend/（直连失败自动换代理）
-npm start                   # 启动应用
-npm run dist                # 打包 zip（输出到 dist/）
-```
-
-国内下载加速：
-
-- 上游 exe 下载慢时：`set GH_PROXY=https://ghfast.top && npm run fetch-backend`
-- Node/npm 已配置 npmmirror，无需额外设置
-
-## 数据与日志位置
-
-采用上游的**便携式布局**，所有数据都在后端 exe 旁边的目录里（解压到哪就用哪，方便整体备份/搬迁）：
-
-```
-BaiduPCS-Desktop 解压目录\
-└── BaiduPCS-Rust-vX.Y.Z-windows-x86_64\
-    ├── baidu-netdisk-rust.exe      # 后端
-    ├── frontend\                   # Web 界面
-    ├── config\app.toml             # 端口/下载目录/Web 认证等配置
-    ├── downloads\                  # 默认下载目录
-    ├── data\ logs\ wal\
-```
-
-壳自身的运行日志（启动后端、端口探测等）：`%APPDATA%\BaiduPCS Desktop\wrapper.log`。
-
-两点说明：
-
-- 上游默认 `host = "0.0.0.0"` 且 Web 认证关闭，局域网内其他设备可以访问你的管理界面；如在意，把 `config/app.toml` 的 `host` 改为 `"127.0.0.1"` 或按上游文档开启 `web_auth`
-- 安装脚本会把 `config/app.toml` 的 `allowed_paths` 调整为 `[]`（不限制上传选择器目录），这是桌面使用的合理默认
-
-## 冒烟测试（可选）
-
-```bash
-npm run smoke
-```
-
-会真实启动应用并自动验证：页面加载、关闭到托盘、后端存活、退出清理，并输出 `smoke-window.png` 截图与 `smoke-result.json`。**注意：会短暂占用 18888 端口，请先关闭正在运行的实例。**
-
-## 自动构建（上传 GitHub 后）
-
-1. 把本项目上传到你的 GitHub 仓库（`backend/` 里的二进制会被 gitignore，无需担心）
-2. 仓库 Settings → Actions 确认工作流已启用
-3. 之后每 6 小时自动检查上游 release，有新版本时五平台并行构建：
-
-   | 平台 | 产物 |
-   |---|---|
-   | Windows x64 | `BaiduPCS-Desktop-*-*-win-x64.zip` |
-   | Linux x64 / ARM64 | `BaiduPCS-Desktop-*-*-linux-x64.zip` / `*-linux-arm64.zip` |
-   | macOS Intel / Apple Silicon | `BaiduPCS-Desktop-*-*-mac-x64.zip` / `*-mac-arm64.zip` |
-
-4. 全部平台构建成功后自动发布 Release（tag 形如 `desktop-v2.2.5`）；已构建过的版本不会重复构建
-5. 想立即构建：Actions → Auto Build → Run workflow（可填指定 tag）
-
-> 注意：定时任务只在**默认分支**上运行，保持默认分支为包含本工作流的分支即可。
-
-## 非 Windows 平台使用说明
-
-- **Linux**：解压 zip 后进入目录执行 `./baidupcs-desktop`（或对应可执行文件）
-- **macOS**：解压 zip，把 `BaiduPCS Desktop.app` 拖入 Applications。应用未签名（没有开发者证书），
-  首次打开若提示"已损坏"或"无法验证开发者"，在终端执行：
-  ```bash
-  xattr -rd com.apple.quarantine "/Applications/BaiduPCS Desktop.app"
-  ```
-- 托盘图标在 macOS 上位于顶部菜单栏，右键（或 Ctrl+点击）可退出
-
-## 免责声明
-
-本项目只是 BaiduPCS-Rust 的桌面封装，使用第三方百度网盘客户端的账号风险请自行评估。
+- 核心能力全部来自上游 [komorebiCarry/BaiduPCS-Rust](https://github.com/komorebiCarry/BaiduPCS-Rust)，本项目只是桌面壳
+- 使用第三方百度网盘客户端存在账号风险，请自行评估
+- 仓库暂未设置开源许可证，如需复用请先联系作者

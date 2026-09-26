@@ -155,9 +155,10 @@ function encodeICO(entries) {
 }
 
 // ---------- 生成 ----------
+// icon.png 用 1024：electron-builder 在 macOS 上转 icns 时要求源图 ≥512
 const assets = path.join(__dirname, '..', 'assets')
 fs.mkdirSync(assets, { recursive: true })
-fs.writeFileSync(path.join(assets, 'icon.png'), encodePNG(256, 256, render(256, true)))
+fs.writeFileSync(path.join(assets, 'icon.png'), encodePNG(1024, 1024, render(1024, true)))
 // 托盘：16px 本体 + 32px @2x（macOS 菜单栏按 tray.png / tray@2x.png 约定自动选择）
 fs.writeFileSync(path.join(assets, 'tray.png'), encodePNG(16, 16, render(16, true)))
 fs.writeFileSync(path.join(assets, 'tray@2x.png'), encodePNG(32, 32, render(32, true)))

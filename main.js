@@ -11,7 +11,7 @@
  *    退出时也只会杀掉本应用自己启动的后端
  */
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, ipcMain, shell, session } = require('electron')
 const { spawn, execFile } = require('child_process')
 const path = require('path')
 const fs = require('fs')
@@ -320,6 +320,22 @@ async function waitBackendReady(candidates) {
   return null
 }
 
+// 会话缓存按后端版本失效：升级后端后，旧版 index/静态资源可能仍留在
+// 持久化缓存（persist:bpcs）里，导致页面加载到新旧混杂的资源
+async function syncSessionCache() {
+  try {
+    const ver = readBackendVersion() || 'unknown'
+    const file = path.join(app.getPath('userData'), 'last-backend-version')
+    let last = null
+    try { last = (await fsp.readFile(file, 'utf8')).trim() } catch { /* 首次运行 */ }
+    if (last !== ver) {
+      log('后端版本变化:', last, '->', ver, '清理会话缓存')
+      await session.fromPartition('persist:bpcs').clearCache()
+      await fsp.writeFile(file, ver + '\n')
+    }
+  } catch (e) { log('清理会话缓存失败:', e) }
+}
+
 // ---------- 托盘 ----------
 
 function createTray() {
@@ -385,6 +401,7 @@ if (!app.requestSingleInstanceLock()) {
     app.setAppUserModelId('com.willbon.baidupcs.desktop')
     backendVersion = readBackendVersion()
     ensureDirs()
+    await syncSessionCache()
     createTray()
     await openMainWindow()
   })

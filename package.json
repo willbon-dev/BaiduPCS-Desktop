@@ -1,7 +1,7 @@
 {
   "name": "baidupcs-desktop",
   "productName": "BaiduPCS Desktop",
-  "version": "2.2.4",
+  "version": "2.4.0",
   "private": true,
   "description": "BaiduPCS-Rust 桌面封装：无命令行窗口、托盘常驻、关闭即后台、自动跟随上游版本构建",
   "author": "willbon",
@@ -41,16 +41,22 @@
     ],
     "artifactName": "BaiduPCS-Desktop-${version}-${os}-${arch}.${ext}",
     "win": {
-      "target": ["zip"],
+      "target": [
+        "zip"
+      ],
       "icon": "assets/icon.ico"
     },
     "mac": {
-      "target": ["zip"],
+      "target": [
+        "zip"
+      ],
       "icon": "assets/icon.png",
       "category": "public.app-category.utilities"
     },
     "linux": {
-      "target": ["zip"],
+      "target": [
+        "zip"
+      ],
       "icon": "assets/icon.png",
       "category": "Utility"
     }

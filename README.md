@@ -68,12 +68,19 @@ macOS / Linux 结构一致：数据分别在 `BaiduPCS Desktop.app/Contents/Reso
 
 两点说明：
 
-- 构建时脚本会把 `filesystem.allowed_paths` 调整为 `[]`——上游默认指向 docker 的 `/data/uploads`，会限制桌面版的上传选择器目录；其余配置保持上游原样
+- 旧版包自带 `config/app.toml`（docker 风格），构建脚本会自动把 `filesystem.allowed_paths` 调整为 `[]` 以放开上传选择器目录限制；**v2.4.0 起包内不再附带 config**，后端使用内置默认值（上传选择器本就不受限）
 - 修改配置后需要**完全退出**（托盘右键 → 退出）再打开才生效
 
 ### 升级须知
 
-后端目录名自带版本号（`BaiduPCS-Rust-vX.Y.Z-…`），**升级到新版后是一个全新空目录**：登录状态与配置不会自动迁移。升级前如需保留，把旧目录的 `config/app.toml` 和 `downloads/` 拷贝到新目录即可（新包里附带的 `config/app.toml.example` 可用来对照字段是否有变化）。
+后端目录名自带版本号（`BaiduPCS-Rust-vX.Y.Z-…`），**升级到新版后是一个全新空目录**：登录状态与配置不会自动迁移，升级前如需保留请把旧目录的 `downloads/` 拷到新目录。
+
+`config/app.toml` 要**谨慎迁移**：v2.4.0 起配置校验变严——只要文件存在，字段就必须齐全，缺任何一个（如 `cors_origins`、`max_global_threads`）后端都会拒绝启动并在日志里写明缺哪个。因此：
+
+- 不确定时**不要拷贝旧版 app.toml**，让后端用默认配置即可
+- 确实要迁移：拷贝后启动若报 `missing field \`xxx\``，按日志提示在对应小节补上该字段，或直接删除 `config/app.toml` 恢复默认
+
+另外，壳检测到后端版本变化时会自动清空页面缓存（`persist:bpcs` 会话），避免升级后加载到新旧混杂的界面资源。
 
 壳自身的运行日志（启动后端、端口探测等）：用户数据目录下 `BaiduPCS Desktop/wrapper.log`
 （Windows 在 `%APPDATA%`，macOS 在 `~/Library/Application Support`，Linux 在 `~/.config`）。

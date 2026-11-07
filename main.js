@@ -416,4 +416,29 @@ if (!app.requestSingleInstanceLock()) {
     backendCwd: backendCwd(),
     wrapperLog: wrapperLogPath(),
   }))
+
+  // 上游“打开文件夹”按钮的占位提示被 preload 捕获后转到这里真正打开：
+  // 目录 → 资源管理器/Finder；文件 → 打开所在目录并选中
+  ipcMain.handle('bpcs:open-path', async (_e, p) => {
+    try {
+      if (typeof p !== 'string' || !p.trim()) return { ok: false, error: '路径为空' }
+      if (!fs.existsSync(p)) {
+        new Notification({ title: '无法打开', body: `路径不存在：\n${p}`, silent: true }).show()
+        return { ok: false, error: '路径不存在' }
+      }
+      if (fs.statSync(p).isDirectory()) {
+        const err = await shell.openPath(p) // 打开成功时返回空串
+        if (err) {
+          new Notification({ title: '无法打开文件夹', body: err, silent: true }).show()
+          return { ok: false, error: err }
+        }
+        return { ok: true }
+      }
+      shell.showItemInFolder(p)
+      return { ok: true }
+    } catch (e) {
+      new Notification({ title: '无法打开', body: String(e), silent: true }).show()
+      return { ok: false, error: String(e) }
+    }
+  })
 }

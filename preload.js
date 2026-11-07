@@ -5,7 +5,41 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('bpcs', {
   getInfo: () => ipcRenderer.invoke('bpcs:get-info'),
   retry: () => ipcRenderer.send('bpcs:retry'),
+  openPath: (p) => ipcRenderer.invoke('bpcs:open-path', p),
 })
+
+/**
+ * 「打开文件夹」接壳
+ *
+ * 上游下载页的“打开文件夹”按钮是占位实现：只弹一个 `文件位置: <路径>` 的
+ * el-message 提示，并没有调用操作系统。这里监听该提示气泡出现，取出路径
+ * 交给主进程真正打开（目录→资源管理器；文件→所在目录并选中），并把占位
+ * 气泡撤掉。上游将来若实现了真接口（气泡不再出现），此钩子自动失效。
+ */
+;(function openFolderHook() {
+  if (!/^https?:$/.test(location.protocol)) return
+  const HANDLED = 'bpcsHandled'
+  const handle = (el) => {
+    if (el.dataset[HANDLED]) return
+    const m = (el.textContent || '').match(/文件位置\s*[:：]\s*(.+)\s*/)
+    if (!m || !m[1].trim()) return
+    el.dataset[HANDLED] = '1'
+    el.remove() // 占位提示不再展示
+    window.bpcs.openPath(m[1].trim())
+  }
+  const scan = (root) => {
+    if (root.nodeType !== 1) return
+    if (root.classList?.contains('el-message')) handle(root)
+    root.querySelectorAll?.('.el-message').forEach(handle)
+  }
+  const start = () => {
+    new MutationObserver((muts) => {
+      for (const mu of muts) for (const n of mu.addedNodes) scan(n)
+    }).observe(document.body, { childList: true, subtree: true })
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start)
+  else start()
+})()
 
 /**
  * 长列表分页器（壳层注入，不改上游前端）
